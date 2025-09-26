@@ -1,6 +1,7 @@
 # hybrid_auto_teleop.py
 # Auto-straight by default; switch to manual on key press; revert to auto after idle.
 # If stopinput == [24,0,0], override with STOP->TURN->STRAIGHT sequence.
+# After 4s from the first [24,0,0], DISABLE AUTO (manual only).
 # Windows-only (msvcrt). For Mac/Linux, swap msvcrt with pynput.
 
 import time
@@ -27,8 +28,12 @@ IDLE_BACK_TO_AUTO = 2.0
 STOP_TIME      = 1.0
 TURN_TIME      = 1.5
 STRAIGHT_TIME  = 2.0
-TURN_SPEED     = 3.0   # wheel speed for turn (-90 in place)
-STRAIGHT_SPEED = 5.0   # wheel speed for straight move
+TURN_SPEED     = 3  # wheel speed for turn (-90 in place)
+STRAIGHT_SPEED = 3
+  # wheel speed for straight move
+
+# ---- auto lockout after first stop event ----
+AUTO_LOCKOUT_AFTER = 6.0  # seconds after first [24,0,0] to disable AUTO
 
 def clip(v, lo, hi): return max(lo, min(hi, v))
 
@@ -49,8 +54,12 @@ def run():
     seq_state   = "IDLE"  # IDLE->STOP->TURN->STRAIGHT->IDLE
     seq_timer   = 0.0
     seq_active  = False   # running sequence
-    seq_armed   = True    # <--- one-shot latch: only the FIRST trigger is accepted
+    seq_armed   = True    # one-shot latch for the first trigger only
     prev_stop_high = False  # for rising-edge detect
+
+    # first stop trigger timing (for auto lockout)
+    first_stop_time = None
+    auto_blocked = False  # when True, AUTO is disabled (manual-only)
 
     # --- print-on-change state for raw_stop ---
     prev_raw_stop = object()  # sentinel so first value always prints
@@ -58,15 +67,8 @@ def run():
     print(f"""
 Hybrid controller running.
 AUTO = straight at {FORWARD_SPEED}. MANUAL on any key; back to AUTO after {IDLE_BACK_TO_AUTO}s idle.
-If stopinput = [24,0,0] => overrides everything: STOP->TURN->STRAIGHT (one-shot).
-
-Controls (MANUAL):
-  W/Up    forward
-  S/Down  backward
-  A/Left  turn left
-  D/Right turn right
-  Space   stop
-  Q       quit
+If stopinput = [24,0,0] => STOP->TURN->STRAIGHT (one-shot).
+After {AUTO_LOCKOUT_AFTER}s from first [24,0,0], AUTO is disabled (manual-only).
 """)
 
     try:
@@ -94,10 +96,20 @@ Controls (MANUAL):
             # only trigger ONCE per run (seq_armed) and only on rising edge
             if seq_armed and not seq_active and seq_state == "IDLE" and rising_edge:
                 seq_active = True
-                seq_armed  = False   # <--- PERMANENTLY disarm after first trigger
+                seq_armed  = False                 # permanently disarm sequence re-triggers
                 seq_state  = "STOP"
                 seq_timer  = 0.0
+                if first_stop_time is None:
+                    first_stop_time = now          # start lockout timer
                 print("\n[SEQ] Triggered by stopinput [24,0,0] (one-shot)")
+
+            # --- enforce auto lockout after first stop event ---
+            if (not auto_blocked) and (first_stop_time is not None) and (now - first_stop_time >= AUTO_LOCKOUT_AFTER):
+                auto_blocked = True
+                # stop the robot if it was cruising in AUTO and switch to MANUAL-only
+                left = right = 0.0
+                mode = "MANUAL"
+                print("\n[AUTO LOCKOUT] AUTO disabled; manual-only control now.")
 
             # --- if in override sequence ---
             if seq_state != "IDLE":
@@ -166,13 +178,18 @@ Controls (MANUAL):
                 mode = "MANUAL"
                 last_key_time = now
             else:
-                if mode == "MANUAL" and (now - last_key_time) >= IDLE_BACK_TO_AUTO:
+                # only return to AUTO if not blocked
+                if (mode == "MANUAL") and (now - last_key_time) >= IDLE_BACK_TO_AUTO and (not auto_blocked):
                     mode = "AUTO"
                     left = right = 0.0
 
             # --- control update ---
             if mode == "AUTO":
-                left = right = FORWARD_SPEED
+                # if auto is blocked, ensure no motion
+                if auto_blocked:
+                    left = right = 0.0
+                else:
+                    left = right = FORWARD_SPEED
                 ctrl.setValue("left_speed", left)
                 ctrl.setValue("right_speed", right)
                 dt = AUTO_DT
@@ -185,9 +202,10 @@ Controls (MANUAL):
                 ctrl.setValue("right_speed", right)
                 dt = MANUAL_DT
 
-            # --- HUD (no stopinput here to avoid extra prints) ---
+            # --- HUD ---
             if now - last_hud > 0.3:
-                print(f"[{mode}] L={left:+.2f} R={right:+.2f}             ", end="\r")
+                auto_flag = "LOCKED" if auto_blocked else "OK"
+                print(f"[{mode} | AUTO:{auto_flag}] L={left:+.2f} R={right:+.2f}   ", end="\r")
                 last_hud = now
 
             time.sleep(dt)

@@ -1,0 +1,84 @@
+# === IO MAPPER (constant run service) ===
+from robodk import robolink
+import time
+
+RDK = robolink.Robolink()
+
+# ------- settings -------
+DT_SEC = 0.01                 # poll period (10 ms)
+ENABLE_PARAM = "io_mapper_enable"   # set to 0 to pause the mapper
+HEARTBEAT_PARAM = "io_mapper_hb"    # updated once per second
+INIT_ZERO = False             # True to zero all params at start
+
+# ------- helpers -------
+def _to_int(x):
+    try:
+        return int(float(x))
+    except:
+        return 0
+
+def InitParams():
+    """Initialize all I/O params (in0..in7, out0..out7, inputs, outputs) to 0"""
+    for p in ['in0','in1','in2','in3','in4','in5','in6','in7',
+              'out0','out1','out2','out3','out4','out5','out6','out7',
+              'inputs','outputs']:
+        RDK.setParam(p, 0)
+
+def ReadInputs_unpack():
+    """Unpack 'inputs' (int) into in0..in7 bits. Returns inputs word."""
+    inputs = _to_int(RDK.getParam('inputs') or 0)
+    for i in range(8):
+        RDK.setParam(f'in{i}', 1 if (inputs >> i) & 1 else 0)
+    return inputs
+
+def PackOutputs_write(prev_outputs):
+    """Pack out0..out7 bits into 'outputs' word and write only if changed.
+       Returns the new outputs word (what is in RoboDK after this call)."""
+    outputs = 0
+    for i in range(8):
+        bit = _to_int(RDK.getParam(f'out{i}') or 0) & 1
+        outputs |= bit << i
+    if outputs != prev_outputs:
+        RDK.setParam('outputs', outputs)
+        return outputs
+    return prev_outputs
+
+# ------- optional one-time init -------
+if RDK.getParam(ENABLE_PARAM) is None:
+    RDK.setParam(ENABLE_PARAM, 1)  # default: enabled
+if INIT_ZERO:
+    InitParams()
+
+# ------- service loop -------
+prev_inputs  = None
+prev_outputs = _to_int(RDK.getParam('outputs') or 0)
+last_hb = 0.0
+
+try:
+    while True:
+        # enable/disable switch
+        enabled = _to_int(RDK.getParam(ENABLE_PARAM) or 1)
+        now = time.time()
+
+        if enabled:
+            # Mirror packed -> bits (inputs)
+            inputs = _to_int(RDK.getParam('inputs') or 0)
+            if inputs != prev_inputs:
+                # only fan-out if changed (saves param writes)
+                for i in range(8):
+                    RDK.setParam(f'in{i}', 1 if (inputs >> i) & 1 else 0)
+                prev_inputs = inputs
+
+            # Pack bits -> packed (outputs)
+            prev_outputs = PackOutputs_write(prev_outputs)
+
+        # heartbeat once per second
+        if now - last_hb >= 1.0:
+            RDK.setParam(HEARTBEAT_PARAM, int(now))
+            last_hb = now
+
+        time.sleep(DT_SEC)
+
+except KeyboardInterrupt:
+    # exit cleanly (leave current values as-is)
+    pass

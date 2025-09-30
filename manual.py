@@ -8,7 +8,7 @@ import msvcrt
 from Controller import UDP_Controller, DataType
 
 # --- network ---
-IP, PORT = "0.0.0.0", 8400
+IP, PORT = "0.0.0.0", 8500
 
 # --- motion tuning ---
 MAX_SPEED = 7.0    # clip for wheel speeds (model may cap at ±1.0)

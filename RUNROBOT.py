@@ -11,7 +11,7 @@ STEER_GAIN = 0.4
 WEIGHTS = [-3,-2,-1,-0.5, 0.5,1,2,3]    # left→right rays
 
 if __name__ == "__main__":
-    ctrl = UDP_Controller(ip="127.0.0.1", port=8400)  # must match the component
+    ctrl = UDP_Controller(ip="127.0.0.1", port=8500)  # must match the component
     ctrl.addVariable("sensor", "str", "")
     ctrl.addVariable("left_speed", "float", 0.0)
     ctrl.addVariable("right_speed", "float", 0.0)

@@ -12,11 +12,11 @@ from Controller import UDP_Controller, DataType
 IP, PORT = "0.0.0.0", 8400
 
 # ---- auto mode ----
-FORWARD_SPEED = 6.0
+FORWARD_SPEED = 3
 AUTO_DT       = 0.02
 
 # ---- manual mode ----
-MAX_SPEED = 7.0
+MAX_SPEED = 3
 STEP      = 1.0
 DECAY     = 0.96
 MANUAL_DT = 0.01
@@ -27,9 +27,9 @@ IDLE_BACK_TO_AUTO = 2.0
 # ---- stopinput sequence ----
 STOP_TIME      = 1.0
 TURN_TIME      = 1.5
-STRAIGHT_TIME  = 2.0
+STRAIGHT_TIME  = 5
 TURN_SPEED     = 3  # wheel speed for turn (-90 in place)
-STRAIGHT_SPEED = 3
+STRAIGHT_SPEED = 2
   # wheel speed for straight move
 
 # ---- auto lockout after first stop event ----
